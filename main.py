@@ -45,7 +45,7 @@ def main():
             print(f"👉 找到 {dest} 的最便宜價格: {current_price} TWD")
             
             # 取得該目的地的期望低價
-            abs_threshold = ABSOLUTE_THRESHOLDS.get(dest, 8000)
+            abs_threshold = ABSOLUTE_THRESHOLDS.get(dest, 3000)
             
             # 評估是否需要發送通知
             eval_result = manager.evaluate_price(
