@@ -54,6 +54,7 @@ def main():
                 absolute_threshold=abs_threshold
             )
 
+
             if eval_result:
                 print(f"🔔 觸發通知條件: {eval_result['reason']}")
                 notifier.format_and_send(flight_data, eval_result)
