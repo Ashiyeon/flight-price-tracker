@@ -42,7 +42,8 @@ class FlightSearch:
             "長榮航空", "EVA Air",
             "國泰航空", "Cathay Pacific",
             "酷航", "Scoot",
-            "樂桃航空", "Peach", "Peach Aviation"
+            "樂桃航空", "Peach", "Peach Aviation",
+            "星宇航空", "Starlux Airlines", "Starlux"
         ]
 
         try:
