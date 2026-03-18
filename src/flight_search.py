@@ -33,6 +33,18 @@ class FlightSearch:
             "currency": currency
         }
 
+        # 使用者指定的航空公司白名單 (中英文對照以應對不同 API 回傳結果)
+        allowed_airlines = [
+            "中華航空", "China Airlines",
+            "日本航空", "Japan Airlines", "JAL",
+            "台灣虎航", "Tigerair Taiwan", "Tigerair",
+            "全日空", "全日空航空", "All Nippon Airways", "ANA",
+            "長榮航空", "EVA Air",
+            "國泰航空", "Cathay Pacific",
+            "酷航", "Scoot",
+            "樂桃航空", "Peach", "Peach Aviation"
+        ]
+
         try:
             print(f"DEBUG: 正在呼叫 Fly-Scraper API ({origin} -> {destination})...")
             response = requests.get(RAPIDAPI_ENDPOINT, headers=self.headers, params=query)
@@ -52,7 +64,36 @@ class FlightSearch:
                 print(f"找不到從 {origin} 到 {destination} 的航班資料。")
                 return None
 
-            best_flight = itineraries[0]
+            best_flight = None
+            best_airlines = []
+
+            # 遍歷航班，尋找完全符合白名單的最便宜機票
+            for flight in itineraries:
+                airlines_in_flight = []
+                legs = flight.get("legs", [])
+                
+                # 收集這個航班的所有承運航空公司
+                for leg in legs:
+                    carriers = leg.get("carriers", {}).get("marketing", [])
+                    for carrier in carriers:
+                        airlines_in_flight.append(carrier.get("name", "未知航空"))
+                
+                # 檢查這個航班的所有航空公司是否都在我們的白名單中
+                is_valid = True
+                for al in airlines_in_flight:
+                    # 使用部分比對，只要名稱中包含白名單的關鍵字即可 (不分大小寫)
+                    if not any(allowed.lower() in al.lower() for allowed in allowed_airlines):
+                        is_valid = False
+                        break
+                
+                if is_valid:
+                    best_flight = flight
+                    best_airlines = list(set(airlines_in_flight))
+                    break # 因為 itineraries 通常已由低價到高價排序，第一個找到的就是最便宜的
+
+            if not best_flight:
+                print(f"在 {origin} 到 {destination} 中，沒有找到符合指定航空公司的航班。")
+                return None
             
             # 解析價格 - 處理多種可能格式
             raw_price = None
