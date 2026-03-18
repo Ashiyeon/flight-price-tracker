@@ -79,8 +79,10 @@ class LineNotifier:
         if tele_res: print("✅ Telegram 通知已發送")
         return line_res or tele_res
 
-    def format_and_send(self, flight_data: dict, evaluation_result: dict):
-        msg = f"{evaluation_result['type']} {evaluation_result['reason']}\n"
+    def format_and_send(self, flight_data: dict, evaluation_result: dict, label: str = ""):
+        # 如果有標籤，就放在最前面
+        label_text = f"【{label}】\n" if label else ""
+        msg = f"{label_text}{evaluation_result['type']} {evaluation_result['reason']}\n"
         msg += "-" * 20 + "\n"
         msg += f"✈️ 目的地：{flight_data['destination']}\n"
         msg += f"💰 價格：{flight_data['price']} {flight_data['currency']}\n"

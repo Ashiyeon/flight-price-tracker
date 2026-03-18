@@ -1,39 +1,25 @@
 import os
 import requests
-import re
-from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
 load_dotenv()
 
-RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
-RAPIDAPI_HOST = "fly-scraper.p.rapidapi.com"
-RAPIDAPI_ENDPOINT = "https://fly-scraper.p.rapidapi.com/v2/flights/search-roundtrip"
+SERPAPI_API_KEY = os.getenv("SERPAPI_API_KEY")
 
 class FlightSearch:
     def __init__(self):
-        self.headers = {
-            "x-rapidapi-key": RAPIDAPI_KEY,
-            "x-rapidapi-host": RAPIDAPI_HOST,
-            "Content-Type": "application/json"
-        }
+        self.api_key = SERPAPI_API_KEY
+        if not self.api_key or self.api_key == "your_serpapi_key_here":
+            print("⚠️ 請先在 .env 中設定 SERPAPI_API_KEY")
 
-    def search_cheap_flights(self, origin: str, destination: str, months_ahead: int = 6, nights_from: int = 5, nights_to: int = 8, currency: str = "TWD") -> dict | None:
+    def search_cheap_flights(self, origin: str, destination: str, departure_date: str, return_date: str, currency: str = "TWD") -> dict | None:
         """
-        使用 Fly-Scraper API 搜尋機票。
+        使用 SerpApi (Google Flights) 搜尋指定日期的直飛特價機票。
         """
-        departure_date = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
-        return_date = (datetime.now() + timedelta(days=35)).strftime("%Y-%m-%d")
+        if not self.api_key or self.api_key == "your_serpapi_key_here":
+            return None
 
-        query = {
-            "originSkyId": origin,
-            "destinationSkyId": destination,
-            "fromDate": departure_date,
-            "toDate": return_date,
-            "currency": currency
-        }
-
-        # 使用者指定的航空公司白名單 (中英文對照以應對不同 API 回傳結果)
+        # 使用者指定的航空公司白名單
         allowed_airlines = [
             "中華航空", "China Airlines",
             "日本航空", "Japan Airlines", "JAL",
@@ -43,112 +29,89 @@ class FlightSearch:
             "國泰航空", "Cathay Pacific",
             "酷航", "Scoot",
             "樂桃航空", "Peach", "Peach Aviation",
-            "星宇航空", "Starlux Airlines", "Starlux"
+            "星宇航空", "Starlux Airlines", "Starlux",
+            # 支援日本國內線轉機 (針對離島)
+            "日本跨洋航空", "Japan Transocean Air", "JTA",
+            "琉球空中通勤", "Ryukyu Air Commuter", "RAC",
+            "全日空之翼", "ANA Wings"
         ]
 
+        url = "https://serpapi.com/search.json"
+        params = {
+            "engine": "google_flights",
+            "departure_id": origin,
+            "arrival_id": destination,
+            "outbound_date": departure_date,
+            "return_date": return_date,
+            "currency": currency,
+            "hl": "zh-TW",
+            "type": "1", # 1: 來回 (Round trip)
+            "api_key": self.api_key
+        }
+
         try:
-            print(f"DEBUG: 正在呼叫 Fly-Scraper API ({origin} -> {destination})...")
-            response = requests.get(RAPIDAPI_ENDPOINT, headers=self.headers, params=query)
-            
-            if response.status_code != 200:
-                print(f"API 錯誤: {response.status_code} - {response.text}")
-                return None
-            
+            print(f"DEBUG: 正在呼叫 SerpApi (Google Flights) ({origin} -> {destination})...")
+            response = requests.get(url, params=params)
+            response.raise_for_status()
             data = response.json()
 
-            if "status" in data and data["status"] is False:
-                print(f"API 回傳失敗訊息: {data.get('message', '未知錯誤')}")
-                return None
-
-            itineraries = data.get("data", {}).get("itineraries", [])
-            if not itineraries:
+            # Google Flights 會回傳 best_flights (最佳航班) 和 other_flights (其他航班)
+            flights_list = data.get("best_flights", []) + data.get("other_flights", [])
+            
+            if not flights_list:
                 print(f"找不到從 {origin} 到 {destination} 的航班資料。")
                 return None
 
             best_flight = None
             best_airlines = []
+            best_price = float('inf')
 
-            # 遍歷航班，尋找完全符合白名單的最便宜機票
-            for flight in itineraries:
-                airlines_in_flight = []
-                legs = flight.get("legs", [])
+            for option in flights_list:
+                price = option.get("price")
+                if price is None:
+                    continue
+                    
+                flights = option.get("flights", [])
                 
-                # 收集這個航班的所有承運航空公司
-                for leg in legs:
-                    carriers = leg.get("carriers", {}).get("marketing", [])
-                    for carrier in carriers:
-                        airlines_in_flight.append(carrier.get("name", "未知航空"))
+                # 檢查是否為直飛 (如果每個航段的 flights 數量為 1)
+                # 針對離島，我們可能需要放寬這個條件。這裡先以「總航班數越少越好」且「必須符合白名單」為主。
+                is_direct = True
                 
-                # 檢查這個航班的所有航空公司是否都在我們的白名單中
-                is_valid = True
-                for al in airlines_in_flight:
-                    # 使用部分比對，只要名稱中包含白名單的關鍵字即可 (不分大小寫)
-                    if not any(allowed.lower() in al.lower() for allowed in allowed_airlines):
-                        is_valid = False
+                airlines_in_option = []
+                is_valid_airline = True
+                
+                for flight in flights:
+                    airline_name = flight.get("airline", "未知航空")
+                    airlines_in_option.append(airline_name)
+                    
+                    if not any(allowed.lower() in airline_name.lower() for allowed in allowed_airlines):
+                        is_valid_airline = False
                         break
                 
-                if is_valid:
-                    best_flight = flight
-                    best_airlines = list(set(airlines_in_flight))
-                    break # 因為 itineraries 通常已由低價到高價排序，第一個找到的就是最便宜的
+                if is_valid_airline and price < best_price:
+                    best_price = price
+                    best_flight = option
+                    best_airlines = list(set(airlines_in_option))
 
             if not best_flight:
                 print(f"在 {origin} 到 {destination} 中，沒有找到符合指定航空公司的航班。")
                 return None
-            
-            # 解析價格 - 處理多種可能格式
-            raw_price = None
-            price_data = best_flight.get("price", {})
-            
-            if isinstance(price_data, dict):
-                # 優先使用 raw 數值
-                raw_price = price_data.get("raw")
-                if raw_price is None:
-                    # 其次嘗試從 formatted 提取數字
-                    formatted = price_data.get("formatted", "")
-                    if formatted:
-                        # 移除逗號和非數字字元 (保留小數點)
-                        clean_price = re.sub(r'[^\d.]', '', formatted)
-                        if clean_price:
-                            raw_price = float(clean_price)
-            else:
-                raw_price = price_data
 
-            # 確保價格是數字
-            try:
-                price = float(raw_price)
-            except (ValueError, TypeError):
-                print(f"無法解析價格: {raw_price}")
-                return None
-
-            # 處理多位數整數問題 (Fly-Scraper 某些回傳值會放大 1000 倍或更多)
-            # 如果 TWD 價格超過 100 萬，極大機率是位數問題
-            if price > 1000000:
-                price = price / 1000
-            elif price > 100000:
-                price = price / 100
-
-            # 提取航空公司
-            airlines = []
-            legs = best_flight.get("legs", [])
-            for leg in legs:
-                carriers = leg.get("carriers", {}).get("marketing", [])
-                for carrier in carriers:
-                    airlines.append(carrier.get("name", "未知航空"))
-            
-            if not airlines:
-                airlines = ["多航空公司"]
+            # 取得訂票連結 (Google Flights 搜尋連結)
+            booking_link = data.get("search_metadata", {}).get("google_flights_url", "")
+            if not booking_link:
+                booking_link = f"https://www.google.com/flights?hl=zh-TW#flt={origin}.{destination}.{departure_date}*{destination}.{origin}.{return_date}"
 
             return {
                 "destination": destination,
-                "price": price,
+                "price": best_price,
                 "currency": currency,
-                "departure_date": best_flight.get("legs", [{}])[0].get("departure", departure_date).split("T")[0],
-                "return_date": best_flight.get("legs", [{}, {}])[1].get("departure", return_date).split("T")[0] if len(legs) > 1 else "N/A",
-                "airlines": list(set(airlines)),
-                "link": f"https://www.google.com/flights?hl=zh-TW#flt={origin}.{destination}.{departure_date}*{destination}.{origin}.{return_date}"
+                "departure_date": departure_date,
+                "return_date": return_date,
+                "airlines": best_airlines,
+                "link": booking_link
             }
 
         except Exception as e:
-            print(f"搜尋發生錯誤 ({destination}): {e}")
+            print(f"SerpApi 搜尋發生錯誤 ({destination}): {e}")
             return None
