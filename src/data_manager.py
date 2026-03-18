@@ -10,6 +10,8 @@ class DataManager:
         self._ensure_file_exists()
 
     def _ensure_file_exists(self):
+        # 確保 data 資料夾存在
+        os.makedirs(os.path.dirname(self.data_file), exist_ok=True)
         if not os.path.exists(self.data_file):
             with open(self.data_file, "w", encoding="utf-8") as f:
                 json.dump({}, f)

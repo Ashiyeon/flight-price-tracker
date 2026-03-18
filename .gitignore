@@ -5,9 +5,10 @@ __pycache__/
 venv/
 .env
 
-# Data
-data/price_history.json
-
 # OS
 .DS_Store
 Thumbs.db
+
+# GitHub Action Data
+# 不要排除 price_history.json，否則自動化無法儲存歷史資料
+!data/price_history.json
